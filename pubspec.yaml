@@ -1,0 +1,6 @@
+name: otohidroliccylinder
+description: Hidrolik Silindir Tasarım Uygulaması - Business Logic Katmanı
+version: 0.1.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
