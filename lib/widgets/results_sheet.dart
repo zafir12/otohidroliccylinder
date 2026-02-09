@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/hydraulic_cylinder.dart';
+import '../models/mounting_type.dart';
+import 'cylinder_drawing.dart';
 
 /// ============================================================================
 /// ResultsSheet - Hesap Sonuçları Alt Sayfası
@@ -14,6 +16,7 @@ class ResultsSheet extends StatelessWidget {
   final double wallThickness;
   final BucklingResult buckling;
   final HydraulicCylinder cylinder;
+  final MountingType mountingType;
 
   const ResultsSheet({
     super.key,
@@ -22,6 +25,7 @@ class ResultsSheet extends StatelessWidget {
     required this.wallThickness,
     required this.buckling,
     required this.cylinder,
+    required this.mountingType,
   });
 
   @override
@@ -78,6 +82,15 @@ class ResultsSheet extends StatelessWidget {
               ),
 
               const SizedBox(height: 20),
+
+              // ── Teknik Resim ───────────────────────────────
+              CylinderDrawing(
+                cylinder: cylinder,
+                mountingType: mountingType,
+                height: 220,
+              ),
+
+              const SizedBox(height: 12),
 
               // ── Kuvvet Kartı ───────────────────────────────
               _ResultCard(

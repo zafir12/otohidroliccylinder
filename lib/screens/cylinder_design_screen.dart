@@ -119,6 +119,7 @@ class _CylinderDesignScreenState extends State<CylinderDesignScreen> {
           wallThickness: wallThickness,
           buckling: buckling,
           cylinder: cylinder,
+          mountingType: mounting,
         ),
       );
     } on HydraulicCylinderException catch (e) {
