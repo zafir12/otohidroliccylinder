@@ -1,64 +1,259 @@
-/// Hidrolik Silindir Bağlantı Tipleri ve Euler Burkulma Katsayıları
+import '../exceptions/hydraulic_exceptions.dart';
+import 'mounting_types/front_flange.dart';
+import 'mounting_types/rear_clevis.dart';
+import 'mounting_types/spherical_bearing.dart';
+import 'mounting_types/trunnion.dart';
+
+/// ============================================================================
+/// MountingType - Bağlantı Tipi Abstract Sınıfı (Polimorfik Yapı)
+/// ============================================================================
 ///
-/// Euler burkulma teorisinde, sütun/çubuk uç koşulları etkili burkulma
-/// boyunu belirler. Etkili boy: L_eff = L / sqrt(n)
-/// Burada n, "end-fixity coefficient" olarak bilinir.
+/// Hidrolik silindirlerde bağlantı elemanı seçimi, hem mekanik tasarımı
+/// hem de burkulma analizini doğrudan etkiler. Her bağlantı tipi:
 ///
-/// Referans: Shigley's Mechanical Engineering Design, Euler Column Theory
+///   1. Farklı geometrik parametreler gerektirir (çap, genişlik, delik vb.)
+///   2. Farklı bir Euler burkulma uç koşulu (boundary condition) tanımlar
+///   3. Farklı bir UI formu oluşturulmasını gerektirir
+///
+/// Bu abstract class, "Strategy Pattern" + "Factory Pattern" birleşimi ile
+/// tüm bağlantı tiplerini tek bir polimorfik arayüzde toplar.
+///
+/// Referanslar:
+///   - ISO 6020-1/2: Hydraulic Cylinder Mounting Dimensions
+///   - ISO 8132: Hydraulic Cylinder Rod End Types
+///   - Shigley's: Euler Column End Conditions
+/// ============================================================================
+abstract class MountingType {
+  const MountingType();
 
-/// Silindir bağlantı tiplerini ve karşılık gelen Euler
-/// burkulma katsayılarını tanımlayan enum.
-enum MountingType {
-  /// Her iki uç mafsal (pin-pin / pivoted-pivoted)
-  /// Etkili boy katsayısı K = 1.0  →  n = 1.0
-  /// En yaygın endüstriyel montaj tipi.
-  pinPin(
-    description: 'Mafsal - Mafsal (Pin-Pin)',
-    endFixityCoefficient: 1.0,
-    effectiveLengthFactor: 1.0,
-  ),
+  // ---------------------------------------------------------------------------
+  // Kimlik & Açıklama (Identity)
+  // ---------------------------------------------------------------------------
 
-  /// Bir uç ankastre (kaynak/flanş), diğer uç mafsal
-  /// Etkili boy katsayısı K = 0.707  →  n = 2.0
-  fixedPin(
-    description: 'Ankastre - Mafsal (Fixed-Pin)',
-    endFixityCoefficient: 2.0,
-    effectiveLengthFactor: 0.707,
-  ),
+  /// Bağlantı tipi kategori tanımlayıcısı.
+  /// Factory method ve serialization için kullanılır.
+  MountingCategory get category;
 
-  /// Her iki uç ankastre (fixed-fixed)
-  /// Etkili boy katsayısı K = 0.5  →  n = 4.0
-  /// En rijit bağlantı; pratikte tam ankastre zor sağlanır.
-  fixedFixed(
-    description: 'Ankastre - Ankastre (Fixed-Fixed)',
-    endFixityCoefficient: 4.0,
-    effectiveLengthFactor: 0.5,
-  ),
+  /// Kullanıcıya gösterilecek Türkçe açıklama.
+  /// Örn: "Ön Flanş (Front Flange)"
+  String get description;
 
-  /// Bir uç ankastre, diğer uç tamamen serbest (cantilever)
-  /// Etkili boy katsayısı K = 2.0  →  n = 0.25
-  /// En kritik durum; burkulma yükü en düşüktür.
-  fixedFree(
-    description: 'Ankastre - Serbest (Fixed-Free)',
-    endFixityCoefficient: 0.25,
-    effectiveLengthFactor: 2.0,
-  );
-
-  const MountingType({
-    required this.description,
-    required this.endFixityCoefficient,
-    required this.effectiveLengthFactor,
-  });
-
-  /// Türkçe açıklama
-  final String description;
+  // ---------------------------------------------------------------------------
+  // Euler Burkulma Katsayıları (Buckling Coefficients)
+  // ---------------------------------------------------------------------------
 
   /// Euler "end-fixity coefficient" (n)
-  /// P_cr = n * π² * E * I / L²
-  final double endFixityCoefficient;
+  ///
+  /// Kritik burkulma yükü formülünde doğrudan çarpan olarak kullanılır:
+  ///   P_cr = n × π² × E × I / L²
+  ///
+  /// Bağlantı tipine göre uç koşulunu temsil eder:
+  ///   - Ankastre-Mafsal (Fixed-Pin):   n = 2.0
+  ///   - Mafsal-Mafsal (Pin-Pin):       n = 1.0
+  ///   - Ankastre-Serbest (Fixed-Free): n = 0.25
+  double get endFixityCoefficient;
 
   /// Etkili boy çarpanı (K)
-  /// L_eff = K * L
-  /// Not: n = 1 / K²
-  final double effectiveLengthFactor;
+  ///
+  /// Etkili burkulma boyu: L_eff = K × L
+  /// İlişki: n = 1 / K²
+  double get effectiveLengthFactor;
+
+  // ---------------------------------------------------------------------------
+  // UI Form Alan Tanımlayıcıları (Form Field Descriptors)
+  // ---------------------------------------------------------------------------
+
+  /// Bu bağlantı tipinin UI formunda gösterilecek alanlarını döndürür.
+  ///
+  /// Flutter UI katmanı bu listeyi kullanarak dinamik olarak
+  /// TextFormField widget'ları oluşturabilir:
+  ///
+  /// ```dart
+  /// // UI tarafında kullanım örneği:
+  /// final mounting = MountingType.fromCategory(MountingCategory.frontFlange);
+  /// for (final field in mounting.formFields) {
+  ///   TextFormField(
+  ///     decoration: InputDecoration(
+  ///       labelText: field.label,
+  ///       suffixText: field.unit,
+  ///       hintText: 'Min: ${field.min} – Max: ${field.max}',
+  ///     ),
+  ///   );
+  /// }
+  /// ```
+  List<FormFieldDescriptor> get formFields;
+
+  // ---------------------------------------------------------------------------
+  // Validasyon (Validation)
+  // ---------------------------------------------------------------------------
+
+  /// Bağlantı elemanı parametrelerinin mühendislik kurallarına uygunluğunu
+  /// kontrol eder.
+  ///
+  /// Her alt sınıf kendi geometrik kısıtlarını denetler.
+  /// Geçersiz parametrelerde [MountingValidationException] fırlatılır.
+  ///
+  /// Döndürülen değer:
+  ///   - `true`: Tüm parametreler geçerli
+  ///   - Exception: Geçersiz parametre tespit edildi
+  bool validate();
+
+  // ---------------------------------------------------------------------------
+  // Serialization
+  // ---------------------------------------------------------------------------
+
+  /// Bağlantı elemanı verilerini JSON Map'e dönüştürür.
+  ///
+  /// Proje kaydetme / yükleme ve API iletişimi için kullanılır.
+  /// Her alt sınıf kendi parametrelerini ekler.
+  Map<String, dynamic> toJson();
+
+  // ---------------------------------------------------------------------------
+  // Factory Method (Creational Pattern)
+  // ---------------------------------------------------------------------------
+
+  /// Verilen [MountingCategory]'ye göre varsayılan parametrelerle
+  /// ilgili alt sınıf örneğini oluşturur.
+  ///
+  /// UI tarafında kullanıcı bir bağlantı tipi seçtiğinde:
+  /// ```dart
+  /// onChanged: (MountingCategory? selected) {
+  ///   final mounting = MountingType.fromCategory(selected!);
+  ///   // mounting.formFields ile formu güncelle
+  /// }
+  /// ```
+  factory MountingType.fromCategory(MountingCategory category) {
+    switch (category) {
+      case MountingCategory.frontFlange:
+        return FrontFlange.empty();
+      case MountingCategory.rearClevis:
+        return RearClevis.empty();
+      case MountingCategory.trunnion:
+        return Trunnion.empty();
+      case MountingCategory.sphericalBearing:
+        return SphericalBearing.empty();
+    }
+  }
+
+  /// JSON Map'ten uygun alt sınıf örneği oluşturur.
+  ///
+  /// Proje dosyasından yükleme senaryosu:
+  /// ```dart
+  /// final json = jsonDecode(savedProject);
+  /// final mounting = MountingType.fromJson(json['frontMounting']);
+  /// ```
+  factory MountingType.fromJson(Map<String, dynamic> json) {
+    final categoryStr = json['category'] as String;
+    final category = MountingCategory.values.firstWhere(
+      (c) => c.name == categoryStr,
+      orElse: () => throw MountingValidationException(
+        'Bilinmeyen bağlantı tipi: $categoryStr',
+        parameterName: 'category',
+      ),
+    );
+
+    switch (category) {
+      case MountingCategory.frontFlange:
+        return FrontFlange.fromJson(json);
+      case MountingCategory.rearClevis:
+        return RearClevis.fromJson(json);
+      case MountingCategory.trunnion:
+        return Trunnion.fromJson(json);
+      case MountingCategory.sphericalBearing:
+        return SphericalBearing.fromJson(json);
+    }
+  }
+
+  @override
+  String toString() => '$category: $description';
+}
+
+/// ============================================================================
+/// MountingCategory - Bağlantı Tipi Tanımlayıcı Enum
+/// ============================================================================
+///
+/// Factory method ve serialization için kullanılan basit tanımlayıcı.
+/// Polimorfik davranışı taşımaz; sadece "hangi tip?" sorusuna cevap verir.
+enum MountingCategory {
+  frontFlange('Ön Flanş'),
+  rearClevis('Arka Çatal'),
+  trunnion('Orta Eklem'),
+  sphericalBearing('Oynak Başlık');
+
+  const MountingCategory(this.label);
+
+  /// UI'da Dropdown menüsünde gösterilecek Türkçe etiket.
+  final String label;
+}
+
+/// ============================================================================
+/// FormFieldDescriptor - UI Form Alanı Tanımlayıcı
+/// ============================================================================
+///
+/// Bağlantı tipinin gerektirdiği her bir parametre için UI'da
+/// nasıl bir form alanı oluşturulacağını tanımlar.
+///
+/// Bu sınıf "Presentation Layer"a ait değildir; Business Logic'in
+/// UI'a "ben şu alanları bekliyorum" demesidir (Metadata Pattern).
+///
+/// Flutter UI'da kullanım örneği:
+/// ```dart
+/// Widget buildMountingForm(MountingType mounting) {
+///   return Column(
+///     children: mounting.formFields.map((field) {
+///       return TextFormField(
+///         decoration: InputDecoration(
+///           labelText: field.label,
+///           suffixText: field.unit,
+///           helperText: field.hint,
+///         ),
+///         keyboardType: field.isInteger
+///             ? TextInputType.number
+///             : TextInputType.numberWithOptions(decimal: true),
+///         validator: (value) {
+///           final v = double.tryParse(value ?? '');
+///           if (v == null) return 'Geçerli bir sayı girin';
+///           if (v < field.min) return 'Minimum: ${field.min} ${field.unit}';
+///           if (v > field.max) return 'Maksimum: ${field.max} ${field.unit}';
+///           return null;
+///         },
+///       );
+///     }).toList(),
+///   );
+/// }
+/// ```
+class FormFieldDescriptor {
+  /// Parametre anahtarı (JSON key ve programatik erişim için)
+  /// Örn: 'flangeDiameter', 'pinDiameter'
+  final String key;
+
+  /// Kullanıcıya gösterilecek Türkçe etiket
+  /// Örn: 'Flanş Çapı', 'Pim Çapı'
+  final String label;
+
+  /// Birim göstergesi
+  /// Örn: 'mm', 'adet'
+  final String unit;
+
+  /// Alt sınır (fiziksel minimum)
+  final double min;
+
+  /// Üst sınır (fiziksel/pratik maksimum)
+  final double max;
+
+  /// Form alanı için ipucu metni
+  final String? hint;
+
+  /// Tam sayı mı yoksa ondalıklı mı? (UI klavye tipi için)
+  final bool isInteger;
+
+  const FormFieldDescriptor({
+    required this.key,
+    required this.label,
+    required this.unit,
+    required this.min,
+    required this.max,
+    this.hint,
+    this.isInteger = false,
+  });
 }

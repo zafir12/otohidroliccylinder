@@ -59,3 +59,14 @@ class BucklingAnalysisException extends HydraulicCylinderException {
       'BucklingAnalysisException: $message'
       '${parameterName != null ? ' [Parametre: $parameterName]' : ''}';
 }
+
+/// Bağlantı elemanı validasyon hatası.
+/// Flanş çapı, pim çapı gibi bağlantı parametrelerinin geçersizliği için.
+class MountingValidationException extends HydraulicCylinderException {
+  const MountingValidationException(super.message, {super.parameterName});
+
+  @override
+  String toString() =>
+      'MountingValidationException: $message'
+      '${parameterName != null ? ' [Parametre: $parameterName]' : ''}';
+}
