@@ -1,3 +1,4 @@
+import '../data/seal_catalog.dart';
 import '../exceptions/hydraulic_exceptions.dart';
 
 /// ============================================================================
@@ -11,11 +12,17 @@ class CylinderPiston {
   final String material;
   final int sealGrooveCount;
 
+  /// K19 compact piston keçesi için önerilen kanal ölçüleri.
+  final double? compactSealWidth;
+  final double? compactSealHeight;
+
   CylinderPiston({
     required double rodDiameter,
     double? width,
     this.material = 'C45',
     this.sealGrooveCount = 2,
+    this.compactSealWidth,
+    this.compactSealHeight,
   }) : width = width ?? (0.6 * rodDiameter) {
     if (rodDiameter <= 0) {
       throw const InvalidDimensionException(
@@ -45,6 +52,8 @@ class CylinderPiston {
       width: (json['width'] as num?)?.toDouble(),
       material: (json['material'] as String?) ?? 'C45',
       sealGrooveCount: (json['sealGrooveCount'] as num?)?.toInt() ?? 2,
+      compactSealWidth: (json['compactSealWidth'] as num?)?.toDouble(),
+      compactSealHeight: (json['compactSealHeight'] as num?)?.toDouble(),
     );
   }
 
@@ -52,6 +61,8 @@ class CylinderPiston {
         'width': width,
         'material': material,
         'sealGrooveCount': sealGrooveCount,
+        'compactSealWidth': compactSealWidth,
+        'compactSealHeight': compactSealHeight,
       };
 }
 
@@ -145,3 +156,25 @@ class CylinderBase {
         'portSize': portSize,
       };
 }
+
+/// ---------------------------------------------------------------------------
+/// Entegrasyon Örneği (Phase 2.8)
+/// ---------------------------------------------------------------------------
+///
+/// Kullanıcı sadece çap girerek piston keçe kanalı ölçülerini otomatik
+/// doldurabilir:
+///
+/// ```dart
+/// final boreDiameter = 100.0;
+/// final rodDiameter = 56.0;
+/// final pistonSeal = SealRepository.getPistonSeal(boreDiameter);
+///
+/// final piston = CylinderPiston(
+///   rodDiameter: rodDiameter,
+///   compactSealWidth: pistonSeal.width,
+///   compactSealHeight: pistonSeal.height,
+/// );
+///
+/// // Örn:
+/// // piston.compactSealWidth = SealRepository.getPistonSeal(boreDiameter).width;
+/// ```
