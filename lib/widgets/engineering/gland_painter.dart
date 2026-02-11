@@ -31,15 +31,6 @@ class GlandPainter extends EngineeringPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bodyStroke = Paint()
-      ..color = Colors.black
-      ..strokeWidth = 1.6
-      ..style = PaintingStyle.stroke;
-
-    final sectionFill = Paint()
-      ..color = Colors.grey.shade300
-      ..style = PaintingStyle.fill;
-
     final centerY = modelHeightMm / 2;
 
     final bodyTop = centerY + outerDiameter / 2;
@@ -113,20 +104,12 @@ class GlandPainter extends EngineeringPainter {
     final sectionPath = Path.combine(PathOperation.difference, contour, rodPath);
     final sectionWithoutGrooves = Path.combine(PathOperation.difference, sectionPath, groovePath);
 
-    // Dolu kesit + tarama
-    canvas.drawPath(sectionWithoutGrooves, sectionFill);
+    // Dolu kesit + tarama + kontur
     drawHatchedPath(
       canvas,
-      size,
       sectionWithoutGrooves,
-      spacingMm: 1.8,
-      angleDeg: 45,
-      lineColor: Colors.grey.shade400,
-      strokeWidth: 1,
+      borderColor: Colors.black,
     );
-
-    // Kontur çizgileri
-    canvas.drawPath(sectionWithoutGrooves, bodyStroke);
 
     // Groove sınırlarını teknik çizim gibi göster
     final grooveStroke = Paint()
@@ -136,42 +119,42 @@ class GlandPainter extends EngineeringPainter {
     canvas.drawPath(groovePath, grooveStroke);
 
     // Ölçülendirme - toplam boy
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(xStart, flangeTop + 4),
       endMm: Offset(xEnd, flangeTop + 4),
-      label: '${totalLength.toStringAsFixed(1)} mm',
+      text: '${totalLength.toStringAsFixed(1)} mm',
       extensionMm: 3.5,
     );
 
     // Dış çap ölçüsü
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(xStart - 6, bodyBottom),
       endMm: Offset(xStart - 6, bodyTop),
-      label: '⌀${outerDiameter.toStringAsFixed(1)}',
+      text: '⌀${outerDiameter.toStringAsFixed(1)}',
       extensionMm: 3,
     );
 
     // Flanş çap ölçüsü
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(xEnd + 2, flangeBottom),
       endMm: Offset(xEnd + 2, flangeTop),
-      label: '⌀${flangeDiameter.toStringAsFixed(1)}',
+      text: '⌀${flangeDiameter.toStringAsFixed(1)}',
       extensionMm: 3,
     );
 
     // Rod deliği ölçüsü
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(xStart + totalLength * 0.45, rodBottom),
       endMm: Offset(xStart + totalLength * 0.45, rodTop),
-      label: '⌀${rodDiameter.toStringAsFixed(1)}',
+      text: '⌀${rodDiameter.toStringAsFixed(1)}',
       extensionMm: 5,
     );
   }

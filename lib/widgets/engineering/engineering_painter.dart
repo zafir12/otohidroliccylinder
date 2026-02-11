@@ -46,9 +46,15 @@ abstract class EngineeringPainter extends CustomPainter {
   }
 
   Rect modelRectToCanvasRect(Rect modelRectMm, Size size) {
-    final topLeft = modelToCanvas(Offset(modelRectMm.left, modelRectMm.top), size);
-    final bottomRight =
-        modelToCanvas(Offset(modelRectMm.right, modelRectMm.bottom), size);
+    final topLeft = modelToCanvas(
+      Offset(modelRectMm.left, modelRectMm.top),
+      size,
+    );
+    final bottomRight = modelToCanvas(
+      Offset(modelRectMm.right, modelRectMm.bottom),
+      size,
+    );
+
     return Rect.fromLTRB(
       math.min(topLeft.dx, bottomRight.dx),
       math.min(topLeft.dy, bottomRight.dy),
@@ -57,54 +63,70 @@ abstract class EngineeringPainter extends CustomPainter {
     );
   }
 
-  /// Teknik ölçü çizgisi (mavi oklar + metin).
-  void drawDimensionLine(
+  /// Kapalı bir path'i teknik resim kesit taraması ile doldurur.
+  ///
+  /// 1) İç dolgu: 10x10 tile üzerinden üretilen 45° hatch shader
+  /// 2) Dış kontur: [borderColor], 1.5 px stroke
+  void drawHatchedPath(
     Canvas canvas,
-    Size size, {
-    required Offset startMm,
-    required Offset endMm,
-    required String text,
-    double offsetMm = 5,
-    double extensionMm = 2.5,
+    Path path, {
+    Color borderColor = Colors.black,
   }) {
-    const dimensionColor = Color(0xFF0066CC);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..shader = _createHatchShader(),
+    );
 
-    final paint = Paint()
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = borderColor,
+    );
+  }
+
+  /// İki nokta arasına teknik resim ölçü çizgisi çizer.
+  ///
+  /// - Ok yönü mesafeye göre otomatik ayarlanır:
+  ///   - Uygun mesafede: içten içe (oklar birbirini gösterir)
+  ///   - Kısa mesafede: dıştan dışa (oklar dışarı bakar)
+  /// - Ölçü metni çizgi ortasına (üst tarafına) yazılır.
+  void drawDimensionLine(Canvas canvas, Offset start, Offset end, String text) {
+    final dimensionColor = Colors.blue.shade700;
+
+    final linePaint = Paint()
       ..color = dimensionColor
-      ..strokeWidth = 1.2
+      ..strokeWidth = 1.3
       ..style = PaintingStyle.stroke;
-
-    final start = modelToCanvas(startMm, size);
-    final end = modelToCanvas(endMm, size);
 
     final v = end - start;
     final length = v.distance;
-    if (length < 1) return;
+    if (length <= 0.1) return;
 
     final dir = Offset(v.dx / length, v.dy / length);
     final normal = Offset(-dir.dy, dir.dx);
 
-    final offsetPx = mmToPixel(offsetMm, size);
-    final extPx = mmToPixel(extensionMm, size);
+    canvas.drawLine(start, end, linePaint);
 
-    final ds = start + normal * offsetPx;
-    final de = end + normal * offsetPx;
+    const arrowLength = 8.0;
+    final bool useOutwardArrows = length < (arrowLength * 5);
 
-    // extension lines
-    canvas.drawLine(start + normal * extPx, ds, paint);
-    canvas.drawLine(end + normal * extPx, de, paint);
+    final startArrowDir = useOutwardArrows ? -dir : dir;
+    final endArrowDir = useOutwardArrows ? dir : -dir;
 
-    // dimension line
-    canvas.drawLine(ds, de, paint);
+    _drawArrowHead(canvas, at: start, dir: startArrowDir, paint: linePaint);
+    _drawArrowHead(canvas, at: end, dir: endArrowDir, paint: linePaint);
 
-    _drawArrow(canvas, at: ds, dir: dir, paint: paint);
-    _drawArrow(canvas, at: de, dir: -dir, paint: paint);
+    final mid = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2);
+    final textCenter = mid + normal * 12;
 
-    final mid = Offset((ds.dx + de.dx) / 2, (ds.dy + de.dy) / 2);
     final tp = TextPainter(
-      text: const TextSpan().copyWith(
+      text: TextSpan(
         text: text,
-        style: const TextStyle(
+        style: TextStyle(
           color: dimensionColor,
           fontWeight: FontWeight.w600,
           fontSize: 11,
@@ -113,51 +135,53 @@ abstract class EngineeringPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
 
-    final bg = Rect.fromCenter(
-      center: mid + normal * 10,
-      width: tp.width + 6,
+    final bgRect = Rect.fromCenter(
+      center: textCenter,
+      width: tp.width + 8,
       height: tp.height + 4,
     );
-    canvas.drawRect(bg, Paint()..color = Colors.white.withOpacity(0.92));
-    tp.paint(canvas, Offset(bg.left + 3, bg.top + 2));
+
+    canvas.drawRect(bgRect, Paint()..color = Colors.white.withOpacity(0.92));
+    tp.paint(canvas, Offset(bgRect.left + 4, bgRect.top + 2));
   }
 
-  /// Kapalı path alanını hatch shader ile doldurur.
-  ///
-  /// Not: Tarama doğrudan `Paint.shader` ile yapılır.
-  void drawHatchedPath(
+  /// Model koordinatları ile ölçü oku çizimi için yardımcı metod.
+  void drawDimensionLineMm(
     Canvas canvas,
-    Size size,
-    Path closedPath, {
-    Color baseColor = const Color(0xFFE0E0E0),
-    Color hatchColor = const Color(0xFFC7C7C7),
-    double hatchSpacingMm = 2.0,
-    double hatchStrokePx = 1.0,
+    Size size, {
+    required Offset startMm,
+    required Offset endMm,
+    required String text,
+    double offsetMm = 0,
+    double extensionMm = 0,
   }) {
-    final bounds = closedPath.getBounds();
-    if (bounds.isEmpty) return;
+    final start = modelToCanvas(startMm, size);
+    final end = modelToCanvas(endMm, size);
 
-    // Base fill
-    canvas.drawPath(
-      closedPath,
-      Paint()
-        ..style = PaintingStyle.fill
-        ..color = baseColor,
-    );
+    final v = end - start;
+    final length = v.distance;
+    if (length <= 0.1) return;
 
-    final spacingPx = math.max(4.0, mmToPixel(hatchSpacingMm, size));
-    final shader = _createHatchShader(
-      spacingPx: spacingPx,
-      strokePx: hatchStrokePx,
-      hatchColor: hatchColor,
-    );
+    final dir = Offset(v.dx / length, v.dy / length);
+    final normal = Offset(-dir.dy, dir.dx);
 
-    canvas.drawPath(
-      closedPath,
-      Paint()
-        ..style = PaintingStyle.fill
-        ..shader = shader,
-    );
+    final offsetPx = mmToPixel(offsetMm, size);
+    final extensionPx = mmToPixel(extensionMm, size);
+
+    final ds = start + normal * offsetPx;
+    final de = end + normal * offsetPx;
+
+    if (extensionPx > 0) {
+      final extPaint = Paint()
+        ..color = Colors.blue.shade700
+        ..strokeWidth = 1.0
+        ..style = PaintingStyle.stroke;
+
+      canvas.drawLine(start, start + normal * (offsetPx + extensionPx), extPaint);
+      canvas.drawLine(end, end + normal * (offsetPx + extensionPx), extPaint);
+    }
+
+    drawDimensionLine(canvas, ds, de, text);
   }
 
   double _scale(Size size) {
@@ -166,48 +190,59 @@ abstract class EngineeringPainter extends CustomPainter {
     return math.min(availableW / modelWidthMm, availableH / modelHeightMm);
   }
 
-  ui.Shader _createHatchShader({
-    required double spacingPx,
-    required double strokePx,
-    required Color hatchColor,
-  }) {
-    final tile = spacingPx * 2;
+  /// 10x10 px tile üzerinde 45° hatch pattern üretir ve ImageShader döndürür.
+  ui.Shader _createHatchShader() {
+    const tileSize = 10.0;
+
     final recorder = ui.PictureRecorder();
-    final c = Canvas(recorder, Rect.fromLTWH(0, 0, tile, tile));
-    final p = Paint()
-      ..color = hatchColor
-      ..strokeWidth = strokePx
-      ..style = PaintingStyle.stroke;
+    final canvas = Canvas(
+      recorder,
+      const Rect.fromLTWH(0, 0, tileSize, tileSize),
+    );
 
-    // 45° hatch
-    c.drawLine(Offset(-tile * 0.2, tile), Offset(tile, -tile * 0.2), p);
-    c.drawLine(Offset(0, tile * 1.2), Offset(tile * 1.2, 0), p);
+    final linePaint = Paint()
+      ..color = Colors.grey.shade400
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke
+      ..isAntiAlias = true;
 
-    final img = recorder.endRecording().toImageSync(tile.ceil(), tile.ceil());
+    // 45° çizgi (sol-alt -> sağ-üst)
+    canvas.drawLine(
+      const Offset(0, tileSize),
+      const Offset(tileSize, 0),
+      linePaint,
+    );
+
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(tileSize.toInt(), tileSize.toInt());
+
     return ImageShader(
-      img,
+      image,
       TileMode.repeated,
       TileMode.repeated,
       Matrix4.identity().storage,
     );
   }
 
-  void _drawArrow(
+  void _drawArrowHead(
     Canvas canvas, {
     required Offset at,
     required Offset dir,
     required Paint paint,
   }) {
-    const len = 8.0;
+    const arrowLength = 8.0;
     const angle = 24 * math.pi / 180;
 
     final left = Offset(
-      at.dx - len * (dir.dx * math.cos(angle) - dir.dy * math.sin(angle)),
-      at.dy - len * (dir.dx * math.sin(angle) + dir.dy * math.cos(angle)),
+      at.dx - arrowLength * (dir.dx * math.cos(angle) - dir.dy * math.sin(angle)),
+      at.dy - arrowLength * (dir.dx * math.sin(angle) + dir.dy * math.cos(angle)),
     );
+
     final right = Offset(
-      at.dx - len * (dir.dx * math.cos(-angle) - dir.dy * math.sin(-angle)),
-      at.dy - len * (dir.dx * math.sin(-angle) + dir.dy * math.cos(-angle)),
+      at.dx -
+          arrowLength * (dir.dx * math.cos(-angle) - dir.dy * math.sin(-angle)),
+      at.dy -
+          arrowLength * (dir.dx * math.sin(-angle) + dir.dy * math.cos(-angle)),
     );
 
     canvas.drawLine(at, left, paint);

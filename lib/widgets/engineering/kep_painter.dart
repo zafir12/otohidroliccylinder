@@ -36,11 +36,6 @@ class KepPainter extends EngineeringPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final outlinePaint = Paint()
-      ..color = Colors.black
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
     final r1 = d1 / 2;
     final r2 = d2 / 2;
     final ri = d / 2;
@@ -117,25 +112,14 @@ class KepPainter extends EngineeringPainter {
     sectionPath = Path.combine(PathOperation.difference, sectionPath, innerGrooves);
     sectionPath = Path.combine(PathOperation.difference, sectionPath, outerGrooves);
 
-    // Kesit tarama
-    drawHatchedPath(
-      canvas,
-      size,
-      sectionPath,
-      baseColor: Colors.grey.shade300,
-      hatchColor: Colors.grey.shade500,
-      hatchSpacingMm: 1.9,
-      hatchStrokePx: 0.9,
-    );
-
-    // Kontur çizgileri
-    canvas.drawPath(sectionPath, outlinePaint);
+    // Kesit tarama + kontur
+    drawHatchedPath(canvas, sectionPath, borderColor: Colors.black);
 
     // Diş gösterimi: L3 boyunca üst/alt kenarda kısa çizgiler
     _drawThreadMarks(canvas, size, r2: r2);
 
     // Ölçülendirme (mavi #0066CC)
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(0, r1 + 3),
@@ -144,7 +128,7 @@ class KepPainter extends EngineeringPainter {
       offsetMm: 4.5,
     );
 
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(0, -r1 - 3),
@@ -153,7 +137,7 @@ class KepPainter extends EngineeringPainter {
       offsetMm: 4,
     );
 
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(l2 - l3, r2 + 2),
@@ -162,7 +146,7 @@ class KepPainter extends EngineeringPainter {
       offsetMm: 4,
     );
 
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(-3.5, -r1),
@@ -171,7 +155,7 @@ class KepPainter extends EngineeringPainter {
       offsetMm: 3,
     );
 
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(l2 + 2.5, -r2),
@@ -180,7 +164,7 @@ class KepPainter extends EngineeringPainter {
       offsetMm: 3,
     );
 
-    drawDimensionLine(
+    drawDimensionLineMm(
       canvas,
       size,
       startMm: Offset(l1 + (l2 - l1) * 0.5, -ri),
