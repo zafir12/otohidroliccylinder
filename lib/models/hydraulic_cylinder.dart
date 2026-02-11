@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../exceptions/hydraulic_exceptions.dart';
+import 'internal_parts.dart';
 import 'mounting_type.dart';
 
 /// ============================================================================
@@ -51,6 +52,9 @@ class HydraulicCylinder {
   /// Lamé formülünde izin verilen gerilme = σ_y / safetyFactor
   static const double yieldStrength = 355.0; // MPa
 
+  /// Kapalı boy hesabında kullanılan emniyet payı [mm]
+  static const double defaultExtraMargin = 7.5;
+
   // ---------------------------------------------------------------------------
   // Özellikler (Properties)
   // ---------------------------------------------------------------------------
@@ -78,6 +82,18 @@ class HydraulicCylinder {
   /// Kural: closedLength > stroke olmalıdır (montaj mesafesi gerekir).
   final double closedLength;
 
+  /// Piston iç bileşeni
+  final CylinderPiston piston;
+
+  /// Ön kep/gland iç bileşeni
+  final CylinderHead head;
+
+  /// Arka kapak iç bileşeni
+  final CylinderBase base;
+
+  /// Kapalı boy hesabındaki ek emniyet payı [mm]
+  final double extraMargin;
+
   // ---------------------------------------------------------------------------
   // Constructor & Validation
   // ---------------------------------------------------------------------------
@@ -92,8 +108,57 @@ class HydraulicCylinder {
     required this.rodDiameter,
     required this.stroke,
     required this.closedLength,
-  }) {
+    CylinderPiston? piston,
+    CylinderHead? head,
+    CylinderBase? base,
+    this.extraMargin = defaultExtraMargin,
+  })  : piston = piston ?? CylinderPiston(rodDiameter: rodDiameter),
+        head = head ??
+            CylinderHead(
+              totalLength: math.max(rodDiameter * 1.2, 25),
+              guideLength: rodDiameter,
+              rodDiameter: rodDiameter,
+            ),
+        base = base ??
+            CylinderBase(
+              thickness: math.max(boreDiameter * 0.12, 12),
+            ) {
     _validateInputs();
+  }
+
+  /// JSON verisinden HydraulicCylinder oluşturur.
+  factory HydraulicCylinder.fromJson(Map<String, dynamic> json) {
+    final rodDiameter = (json['rodDiameter'] as num).toDouble();
+    final boreDiameter = (json['boreDiameter'] as num).toDouble();
+
+    return HydraulicCylinder(
+      pressure: (json['pressure'] as num).toDouble(),
+      boreDiameter: boreDiameter,
+      rodDiameter: rodDiameter,
+      stroke: (json['stroke'] as num).toDouble(),
+      closedLength: (json['closedLength'] as num).toDouble(),
+      extraMargin:
+          (json['extraMargin'] as num?)?.toDouble() ?? defaultExtraMargin,
+      piston: json['piston'] is Map
+          ? CylinderPiston.fromJson(
+              Map<String, dynamic>.from(json['piston'] as Map),
+              rodDiameter: rodDiameter,
+            )
+          : CylinderPiston(rodDiameter: rodDiameter),
+      head: json['head'] is Map
+          ? CylinderHead.fromJson(
+              Map<String, dynamic>.from(json['head'] as Map),
+              rodDiameter: rodDiameter,
+            )
+          : CylinderHead(
+              totalLength: math.max(rodDiameter * 1.2, 25),
+              guideLength: rodDiameter,
+              rodDiameter: rodDiameter,
+            ),
+      base: json['base'] is Map
+          ? CylinderBase.fromJson(Map<String, dynamic>.from(json['base'] as Map))
+          : CylinderBase(thickness: math.max(boreDiameter * 0.12, 12)),
+    );
   }
 
   /// Tüm giriş parametrelerinin mühendislik kurallarına uygunluğunu kontrol eder.
@@ -155,8 +220,23 @@ class HydraulicCylinder {
         parameterName: 'closedLength',
       );
     }
-  }
 
+    if (extraMargin < 0) {
+      throw const InvalidStrokeException(
+        'Ek emniyet payı negatif olamaz.',
+        parameterName: 'extraMargin',
+      );
+    }
+
+    final minClosedLength = calculateMinClosedLength();
+    if (closedLength < minClosedLength) {
+      throw InvalidStrokeException(
+        'Kapalı boy ($closedLength mm), minimum hesaplanan değerden '
+        '(${minClosedLength.toStringAsFixed(1)} mm) küçük olamaz.',
+        parameterName: 'closedLength',
+      );
+    }
+  }
   // ---------------------------------------------------------------------------
   // Türetilmiş Geometrik Özellikler (Derived Geometric Properties)
   // ---------------------------------------------------------------------------
@@ -371,6 +451,75 @@ class HydraulicCylinder {
     );
   }
 
+
+
+  /// Toplam metal ağırlık hesabı [kg]
+  ///
+  /// Varsayımlar:
+  /// - Malzeme: Çelik (ρ = 7.85 g/cm³ = 7850 kg/m³)
+  /// - Parçalar: Boru gövdesi + rod + piston + head + base
+  /// - Basitleştirilmiş geometri (silindirik/halka hacimler)
+  double calculateTotalWeight() {
+    const steelDensityKgPerM3 = 7850.0;
+
+    // --- Geometrik yardımcı dönüşümler ---
+    double mm3ToM3(double mm3) => mm3 * 1e-9;
+
+    // Gövde et kalınlığı hesaplı (minimum) + üretim payı
+    final wall = calculateWallThickness() + 1.0;
+    final outerBoreDiameter = boreDiameter + 2 * wall;
+
+    // Görsel/model varsayımı: boru boyu ~ closedLength - head - base
+    final tubeLength = math.max(closedLength - head.totalLength - base.thickness, stroke);
+
+    // 1) Boru hacmi (halka silindir)
+    final tubeVolumeMm3 =
+        math.pi / 4 * (outerBoreDiameter * outerBoreDiameter - boreDiameter * boreDiameter) * tubeLength;
+
+    // 2) Rod hacmi (tam silindir)
+    final rodLength = stroke + head.totalLength;
+    final rodVolumeMm3 = math.pi / 4 * rodDiameter * rodDiameter * rodLength;
+
+    // 3) Piston hacmi (dış silindir - rod deliği)
+    final pistonVolumeMm3 =
+        math.pi / 4 * (boreDiameter * boreDiameter - rodDiameter * rodDiameter) * piston.width;
+
+    // 4) Head hacmi (dış silindir - rod geçiş deliği)
+    final headOuterDiameter = outerBoreDiameter;
+    final headVolumeMm3 =
+        math.pi / 4 * (headOuterDiameter * headOuterDiameter - rodDiameter * rodDiameter) * head.totalLength;
+
+    // 5) Base hacmi (kapak diski + rod tarafı kör, yani tam daire yaklaşımı)
+    final baseOuterDiameter = outerBoreDiameter;
+    final baseVolumeMm3 = math.pi / 4 * baseOuterDiameter * baseOuterDiameter * base.thickness;
+
+    final totalVolumeM3 =
+        mm3ToM3(tubeVolumeMm3 + rodVolumeMm3 + pistonVolumeMm3 + headVolumeMm3 + baseVolumeMm3);
+
+    return totalVolumeM3 * steelDensityKgPerM3;
+  }
+
+  /// Minimum kapalı boy hesabı [mm]
+  ///
+  /// Formül:
+  ///   L_closed,min = piston.width + head.totalLength + base.thickness + stroke + extraMargin
+  double calculateMinClosedLength() {
+    return piston.width + head.totalLength + base.thickness + stroke + extraMargin;
+  }
+
+  /// Silindir modelini JSON'a dönüştürür.
+  Map<String, dynamic> toJson() => {
+        'pressure': pressure,
+        'boreDiameter': boreDiameter,
+        'rodDiameter': rodDiameter,
+        'stroke': stroke,
+        'closedLength': closedLength,
+        'extraMargin': extraMargin,
+        'piston': piston.toJson(),
+        'head': head.toJson(),
+        'base': base.toJson(),
+      };
+
   // ---------------------------------------------------------------------------
   // Özet Rapor (Summary)
   // ---------------------------------------------------------------------------
@@ -382,7 +531,8 @@ class HydraulicCylinder {
         'D: $boreDiameter mm, '
         'd: $rodDiameter mm, '
         'Strok: $stroke mm, '
-        'Kapalı Boy: $closedLength mm)';
+        'Kapalı Boy: $closedLength mm, '
+        'Min Kapalı Boy: ${calculateMinClosedLength().toStringAsFixed(1)} mm)';
   }
 }
 
